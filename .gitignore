@@ -1,0 +1,14 @@
+# Mediciones grabadas por el software (son datos del aula, no codigo)
+registros/
+*.xlsx
+
+# Firmware de MicroPython (se descarga de micropython.org; ver README)
+.esp-micropython-firmware/
+
+# Python
+__pycache__/
+*.pyc
+
+# Sistema
+Thumbs.db
+desktop.ini
