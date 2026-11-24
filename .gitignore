@@ -3,7 +3,8 @@ registros/
 *.xlsx
 
 # Firmware de MicroPython (se descarga de micropython.org; ver README)
-.esp-micropython-firmware/
+.micropython-firmware/
+*.uf2
 
 # Python
 __pycache__/

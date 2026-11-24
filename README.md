@@ -45,7 +45,8 @@ proyecto richar/
 ├── exportar_excel.py          Exporta los registros a un Excel con fórmulas y gráficos (PC)
 ├── captura.png                Cómo se ve el software de control
 ├── registros/                 Se crea sola: un archivo .csv por día con las mediciones
-├── esp32.py                   Programa antiguo del sensor ultrasónico (no se usa aquí)
+├── pico_w_integrado/          Versión integrada con TCRT5000 (va al Pico W)
+│   └── main.py                Programa completo en un solo archivo (POO)
 └── jhonell.sensorcalidad/     Todo lo que va al Pico W (y nada más)
     ├── main.py                Clase EstacionCalidadAire (programa principal)
     ├── Sensor.py              Clase Sensor (clase base)
@@ -65,19 +66,19 @@ lo que está afuera se queda en la PC.
 
 ## Versión integrada con TCRT5000 (`pico_w_integrado/main.py`)
 
-Es el programa integrado que ya funcionaba en el ESP32 (contador con dos **TCRT5000**,
-B → A = entrada, A → B = salida), pasado al Pico W y en POO: `Configuracion` (pines y tiempos),
+Programa integrado en un solo archivo (contador con dos **TCRT5000**,
+B → A = entrada, A → B = salida), en POO: `Configuracion` (pines y tiempos),
 `Sensor` (clase base) con `SensorDHT11`, `SensorSCD40`, `SensorPMS5003` y `SensorTCRT5000` como
 hijas, `ContadorPersonas`, `PantallaOLED` y `SistemaCalidadAire`. Se copia como `main.py` al Pico W
 junto con `ssd1306.py`.
 
-| Componente | ESP32 (antes) | Pico W (ahora) | Alimentación |
-|---|---|---|---|
-| OLED + SCD40 (I2C) | SDA 21, SCL 22 | SDA GP4 (6), SCL GP5 (7) — I2C0 | 3V3 OUT (36) |
-| DHT11 | DATA 4 | DATA GP15 (20) | 3V3 OUT (36) |
-| PMS5003 (UART) | UART2, RX 16, TX 17 | UART0: TX sensor → GP1 (2), RX sensor ← GP0 (1) | VBUS 5 V (40) |
-| TCRT5000 A | DO 32 | DO GP16 (21) | 3V3 OUT (36) |
-| TCRT5000 B | DO 33 | DO GP17 (22) | 3V3 OUT (36) |
+| Componente | Pines Pico W (GPxx = pin físico) | Alimentación |
+|---|---|---|
+| OLED + SCD40 (I2C) | SDA GP4 (6), SCL GP5 (7) — I2C0 | 3V3 OUT (36) |
+| DHT11 | DATA GP15 (20) | 3V3 OUT (36) |
+| PMS5003 (UART) | UART0: TX sensor → GP1 (2), RX sensor ← GP0 (1) | VBUS 5 V (40) |
+| TCRT5000 A | DO GP16 (21) | 3V3 OUT (36) |
+| TCRT5000 B | DO GP17 (22) | 3V3 OUT (36) |
 
 Alimenta los TCRT5000 con **3,3 V**: con 5 V su salida DO entrega 5 V y puede dañar el Pico W.
 
