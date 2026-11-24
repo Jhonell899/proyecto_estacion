@@ -162,7 +162,6 @@ class EnlaceSimulado(Enlace):
         self._dentro = 0
         self._entradas = 0
         self._salidas = 0
-        self._umbral_cm = 70
 
     def _midiendo_ideal(self):
         return self._ideal_estado in ("PROBANDO", "MIDIENDO")
@@ -234,7 +233,7 @@ class EnlaceSimulado(Enlace):
             "ideal": self._resumen_ideal(),
             "personas": {
                 "dentro": self._dentro, "entradas": self._entradas, "salidas": self._salidas,
-                "umbral_cm": self._umbral_cm, "exterior_ok": True, "interior_ok": True,
+                "canceladas": 0, "exterior_ok": True, "interior_ok": True,
             },
         }
 
@@ -284,9 +283,6 @@ class EnlaceSimulado(Enlace):
         elif nombre == "intervalos":
             self._t_lectura, self._t_pantalla = comando["lectura"], comando["pantalla"]
             mensaje = "Intervalos actualizados"
-        elif nombre == "personas" and comando.get("accion") == "umbral":
-            self._umbral_cm = int(comando["cm"])
-            mensaje = "Umbral de la puerta: {} cm".format(self._umbral_cm)
         elif nombre == "personas":
             self._dentro = self._entradas = self._salidas = 0
             mensaje = "Conteo de alumnos en cero"
@@ -633,9 +629,7 @@ class VentanaControl(tk.Tk):
         self._puerta.pack(fill="x")
         tabla = tk.Frame(puerta.cuerpo, bg=puerta.cuerpo.cget("bg"))
         tabla.pack(fill="x", pady=(6, 0))
-        self._umbral = self._fila_entradas(tabla, 0, "UMBRAL cm", 1)[0]
-        self._boton(tabla, "Aplicar", self.aplicar_umbral, "check").grid(row=0, column=2, padx=8)
-        self._boton(tabla, "Reiniciar conteo", self.reiniciar_conteo, "actualizar").grid(row=0, column=3)
+        self._boton(tabla, "Reiniciar conteo", self.reiniciar_conteo, "actualizar").grid(row=0, column=0)
 
         registro = Panel(marco, "Registro (historial)", numero=4)
         registro.pack(fill="x")
@@ -877,10 +871,11 @@ class VentanaControl(tk.Tk):
             self._mostrar_ideal(ideal)
 
     def _mostrar_puerta(self, personas):
-        """Estado de los dos HC-SR04 de la puerta."""
-        exterior = "OK" if personas.get("exterior_ok") else "NO RESPONDE"
-        interior = "OK" if personas.get("interior_ok") else "NO RESPONDE"
-        self._puerta.config(text="sensor exterior {}   sensor interior {}".format(exterior, interior),
+        """Estado de los dos TCRT5000 de la puerta y los cruces cancelados."""
+        exterior = "OK" if personas.get("exterior_ok") else "TAPADO"
+        interior = "OK" if personas.get("interior_ok") else "TAPADO"
+        self._puerta.config(text="sensor exterior {}   sensor interior {}   cruces cancelados {}".format(
+                                exterior, interior, personas.get("canceladas", 0)),
                             fg=Tema.TEXTO if exterior == interior == "OK" else Tema.ROJO)
         ok = exterior == interior == "OK"
         self._tarjeta_alumnos.poner_puerta("PUERTA OK" if ok else "PUERTA: REVISAR", ok)
@@ -928,8 +923,6 @@ class VentanaControl(tk.Tk):
             self._poner_entradas(self._lim_co2, datos["lim_co2"])
             self._poner_entradas(self._lim_pm25, datos["lim_pm25"])
             self._poner_entradas(self._intervalos, [datos["t_lectura"], datos["t_pantalla"]])
-            if datos.get("personas"):
-                self._poner_entradas([self._umbral], [datos["personas"]["umbral_cm"]])
             self._ajustes_cargados = True
         except (KeyError, TypeError, ValueError):
             pass
@@ -1052,16 +1045,6 @@ class VentanaControl(tk.Tk):
 
     def alternar_pms(self):
         self._enviar({"cmd": "pms", "dormir": not self._pms_dormido})
-
-    def aplicar_umbral(self):
-        try:
-            umbral = self._leer_entradas([self._umbral], "el umbral de la puerta")[0]
-            if not 10 <= umbral <= 190:
-                raise ValueError("El umbral de la puerta debe ser de 10 a 190 cm")
-        except ValueError as error:
-            self.registrar("ERROR: {}".format(error))
-            return
-        self._enviar({"cmd": "personas", "accion": "umbral", "cm": int(umbral)})
 
     def reiniciar_conteo(self):
         if messagebox.askyesno("Conteo de alumnos",

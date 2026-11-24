@@ -19,18 +19,18 @@ Placa: **Raspberry Pi Pico W** (RP2040) con MicroPython.
 | OLED SSD1306 128x64 | (pantalla) | I2C0 (0x3C) | SDA GP4 (6), SCL GP5 (7) | 3V3 OUT (36) |
 | PMS5003 | PM1.0, PM2.5, PM10 | UART0 9600 | TX sensor → GP1 (2), RX sensor → GP0 (1) | VBUS 5 V (40) |
 | DHT11 | Temperatura, humedad (respaldo) | 1 cable de datos | DATA → GP15 (20) | 3V3 OUT (36) |
-| HC-SR04 exterior (puerta) | Personas que pasan | TRIG / ECHO | TRIG GP16 (21), ECHO GP17 (22) | VBUS 5 V (40) |
-| HC-SR04 interior (puerta) | Personas que pasan | TRIG / ECHO | TRIG GP18 (24), ECHO GP19 (25) | VBUS 5 V (40) |
+| TCRT5000 interior A (puerta) | Personas que pasan | Salida digital DO | DO → GP16 (21) | 3V3 OUT (36) |
+| TCRT5000 exterior B (puerta) | Personas que pasan | Salida digital DO | DO → GP17 (22) | 3V3 OUT (36) |
 
 - El SCD40 y la OLED comparten los mismos dos cables I2C.
 - **GND:** todos los GND juntos, a cualquier pin GND del Pico (3, 8, 13, 18, 23, 28, 33 o 38).
-- **VBUS (pin 40)** entrega los 5 V del cable USB: alcanza para el PMS5003 y los dos HC-SR04.
+- **VBUS (pin 40)** entrega los 5 V del cable USB: se usa solo para el PMS5003.
   **3V3 OUT (pin 36)** es la salida de 3,3 V. No uses el pin 39 (VSYS) ni el 37 (3V3_EN).
 - No uses GP23, GP24, GP25 ni GP29: en el Pico W están ocupados por el chip WiFi.
 
-**Importante:** los pines del Pico W **no soportan 5 V**. El pin ECHO de cada HC-SR04 entrega 5 V:
-conéctalo con un divisor de voltaje (por ejemplo, 1 kΩ en serie y 2 kΩ a tierra) para bajarlo
-a 3,3 V. El TX del PMS5003 ya trabaja a 3,3 V y va directo.
+**Importante:** los pines del Pico W **no soportan 5 V**. Alimenta los TCRT5000 con **3,3 V**:
+con 5 V su salida DO entrega 5 V y puede dañar el Pico W. El TX del PMS5003 ya trabaja a 3,3 V
+y va directo.
 
 Si quieres cambiar algún pin, se cambia en la parte *Configuración* de `main.py`.
 
@@ -54,7 +54,7 @@ proyecto richar/
     ├── Comunicador.py         Clase Comunicador (OLED, consola y calificación)
     ├── EnlacePC.py            Clase EnlacePC (comunicación con el software de la PC)
     ├── AmbienteIdeal.py       Clase AmbienteIdeal (prueba de funcionamiento + ambiente ideal)
-    ├── SensorUltrasonico.py   Clase SensorUltrasonico (HC-SR04), hereda de Sensor
+    ├── SensorTCRT5000.py      Clase SensorTCRT5000 (TCRT5000, puerta), hereda de Sensor
     ├── ContadorPersonas.py    Clase ContadorPersonas (entradas y salidas por la puerta)
     └── Contador.py            Clase Contador (temporizador)
 ```
@@ -98,11 +98,11 @@ lo que está afuera se queda en la PC.
         + actualizar(lecturas, sensores)
         + progreso(), valor(variable), resumen()
 
-        SensorUltrasonico (hereda de Sensor)    ContadorPersonas
-        + distancia                             + dentro, entradas, salidas
-        + leer() -> cm o None                   + umbral_cm
-        + responde()                            + actualizar(), resetear()
-                                                + cambiar_umbral(cm), resumen()
+        SensorTCRT5000 (hereda de Sensor)       ContadorPersonas
+        + detecta                               + dentro, entradas, salidas, cancelaciones
+        + leer() -> True / False                + estado (maquina de estados del cruce)
+        + responde()                            + actualizar() -> ENTRADA / SALIDA / None
+                                                + cruzando(), resetear(), resumen()
 
         EstacionCalidadAire  (clase principal, contiene a las demás)
         + gas: SensorGas
@@ -112,7 +112,7 @@ lo que está afuera se queda en la PC.
         + lectura, refresco: Contador
         + enlace: EnlacePC
         + ideal: AmbienteIdeal
-        + puerta_ext, puerta_int: SensorUltrasonico
+        + puerta_ext, puerta_int: SensorTCRT5000
         + personas: ContadorPersonas
         + paso()
         + iniciar(), detener()
@@ -120,11 +120,11 @@ lo que está afuera se queda en la PC.
 
 | Concepto de POO | Dónde se usa |
 |---|---|
-| Herencia | `SensorGas`, `SensorAmbiental`, `SensorDHT11` y `SensorUltrasonico` heredan de `Sensor` |
+| Herencia | `SensorGas`, `SensorAmbiental`, `SensorDHT11` y `SensorTCRT5000` heredan de `Sensor` |
 | Polimorfismo | `EstacionCalidadAire` llama a `leer()` y `detener()` en cada sensor de su lista |
 | Abstracción | `Sensor` define qué hace un sensor, sin decir cómo |
 | Encapsulamiento | Los detalles internos son métodos y atributos con `_` |
-| Composición | `EstacionCalidadAire` contiene sensores, pantalla, temporizadores, el ambiente ideal y el contador de personas; `ContadorPersonas` contiene los dos `SensorUltrasonico` |
+| Composición | `EstacionCalidadAire` contiene sensores, pantalla, temporizadores, el ambiente ideal y el contador de personas; `ContadorPersonas` contiene los dos `SensorTCRT5000` |
 
 ## Funcionamiento
 
@@ -146,30 +146,33 @@ lo que está afuera se queda en la PC.
 7. Al detenerlo desde Thonny (Ctrl+C), apaga la medición del SCD40.
 8. Cada vez que actualiza la pantalla, también envía las lecturas a la PC por el cable USB
    y atiende los comandos que lleguen desde el software de control.
-9. En cada vuelta del ciclo (cada ~20 ms) revisa uno de los dos sensores de la puerta.
+9. En cada vuelta del ciclo (cada ~5 ms) revisa los dos sensores de la puerta, y otra vez después de leer cada sensor de aire.
 
 ## Conteo de personas
 
-Dos HC-SR04 en el marco de la puerta, a la altura de la cintura, apuntando hacia el otro lado y
-separados unos 15-20 cm: el **exterior** del lado del pasillo y el **interior** del lado del aula.
+Dos **TCRT5000** (sensores infrarrojos) en el marco de la puerta, separados unos 8 cm:
+el **exterior** (sensor B) del lado del pasillo y el **interior** (sensor A) del lado del aula.
+Cada uno da 0 V cuando detecta algo y 3,3 V cuando está libre.
 
 ```
-   PASILLO      [EXTERIOR]  ->  persona entra  ->  [INTERIOR]      AULA
+   PASILLO      [EXTERIOR B]  ->  persona entra  ->  [INTERIOR A]      AULA
 ```
 
-- Un sensor está *activo* cuando tiene algo más cerca que el **umbral** (70 cm por defecto).
-  El umbral debe ser menor que el ancho de la puerta, para que el marco del frente no cuente.
-- El primero que se activa indica de dónde viene la persona. Se cuenta cuando la puerta queda
-  libre y el último en liberarse es el otro sensor: exterior → interior = **entrada**;
-  interior → exterior = **salida**.
-- Si alguien se asoma y se regresa, no se cuenta. Una lectura suelta tampoco: un cambio debe
-  repetirse 2 veces seguidas.
+- exterior → interior = **entrada** (+1); interior → exterior = **salida** (−1).
+- El cruce se sigue paso a paso: primero un sensor, luego los dos (o un espacio libre entre
+  ellos), luego solo el otro, y al final la puerta libre durante 0,25 s. Recién ahí se cuenta.
+- **No se cuenta** (y suma a *cruces cancelados*) si la persona retrocede, si los dos sensores
+  se activan a la vez al empezar, o si el cruce tarda más de 8 s.
+- Antirrebote: un cambio del sensor solo vale si dura 30 ms.
+- Si un sensor queda detectando más de 30 s seguidos, se marca **TAPADO** (revisar que no esté
+  tapado ni desalineado) y el software muestra `PUERTA: REVISAR`.
 - **Alumnos en el aula** = entradas − salidas, y nunca baja de 0. El software muestra los
   alumnos en el aula y cuántos salieron.
 - Los totales se guardan en el Pico W (`conteo.json`) y se recuperan al encender.
   **Reiniciar conteo** los pone en cero (por ejemplo, al empezar el día).
-- Los sensores se leen de a uno, alternándolos, para que el eco de uno no confunda al otro.
-- Limitación: si dos personas cruzan a la vez, muy juntas, cuenta una sola.
+- Mientras alguien cruza, la OLED no se redibuja (tarda), para no perder el cruce.
+- Limitación: son sensores de corto alcance y, si dos personas cruzan juntas, cuentan una sola.
+  Para ver cada paso del cruce en Thonny, poner `DEPURAR = True` en `ContadorPersonas.py`.
 
 ## Ambiente ideal (prueba de funcionamiento + medición)
 
@@ -248,7 +251,7 @@ Mientras el sensor de polvo y humo (PMS5003) se calienta (30 s) no se dan alerta
    (el Pico W necesita internet para esto; si no, copia `ssd1306.py` a mano desde
    micropython-lib). El módulo `dht` ya viene incluido en el firmware.
 3. Copiar los 11 archivos de `jhonell.sensorcalidad/` a la raíz de la placa (desde dentro de esa carpeta):
-   `mpremote cp Sensor.py Sensorgas.py SensorAmbiental.py SensorDHT11.py SensorUltrasonico.py ContadorPersonas.py Comunicador.py EnlacePC.py AmbienteIdeal.py Contador.py main.py :`
+   `mpremote cp Sensor.py Sensorgas.py SensorAmbiental.py SensorDHT11.py SensorTCRT5000.py ContadorPersonas.py Comunicador.py EnlacePC.py AmbienteIdeal.py Contador.py main.py :`
 4. Reiniciar (desconectar y conectar el USB). Debe aparecer `Dispositivos I2C: ['0x3c', '0x62']`.
 
 ## Software de control (PC)
@@ -312,7 +315,7 @@ haber en el aula (clase `Referencias`):
 **Más ajustes** abre una ventana aparte con lo que no entra en la principal:
 - cada cuánto lee los sensores y actualiza la pantalla;
 - dormir o despertar el sensor de polvo y humo (PMS5003);
-- la puerta: si los dos sensores responden, el umbral y *Reiniciar conteo*;
+- la puerta: si los dos sensores funcionan (o están TAPADOS), los cruces cancelados y *Reiniciar conteo*;
 - el registro: lugar, *Grabar cada N min*, cuántos registros van hoy, *Exportar a Excel* y *Abrir carpeta*.
 
 Los ajustes se guardan en el Pico W (`ajustes.json`) y se recuperan al encender.
@@ -385,7 +388,6 @@ Por el mismo cable USB que usa Thonny (115200 baudios), con líneas de texto:
 | PC → Pico W | Dormir/despertar PMS5003 | `{"cmd": "pms", "dormir": true}` |
 | PC → Pico W | Medir el ambiente ideal | `{"cmd": "ideal", "accion": "iniciar", "minutos": 60}` |
 | PC → Pico W | Borrar/cancelar el ambiente ideal | `{"cmd": "ideal", "accion": "resetear"}` |
-| PC → Pico W | Cambiar el umbral de la puerta | `{"cmd": "personas", "accion": "umbral", "cm": 70}` |
 | PC → Pico W | Reiniciar el conteo de personas | `{"cmd": "personas", "accion": "resetear"}` |
 
 ## Historial (con fecha y hora)

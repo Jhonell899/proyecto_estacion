@@ -10,7 +10,7 @@ from Comunicador import Comunicador
 from Contador import Contador
 from EnlacePC import EnlacePC
 from AmbienteIdeal import AmbienteIdeal
-from SensorUltrasonico import SensorUltrasonico
+from SensorTCRT5000 import SensorTCRT5000
 from ContadorPersonas import ContadorPersonas
 
 
@@ -34,11 +34,11 @@ class EstacionCalidadAire:
     PMS_RX = 1              # GP1 (pin 2)
     # DHT11: pin de datos
     DHT_PIN = 15            # GP15 (pin 20)
-    # HC-SR04 de la puerta (ECHO con divisor de voltaje a 3,3 V)
-    PUERTA_EXT_TRIG = 16    # GP16 (pin 21), sensor del lado del pasillo
-    PUERTA_EXT_ECHO = 17    # GP17 (pin 22)
-    PUERTA_INT_TRIG = 18    # GP18 (pin 24), sensor del lado del aula
-    PUERTA_INT_ECHO = 19    # GP19 (pin 25)
+    # TCRT5000 de la puerta (salida DO; alimentarlos con 3,3 V)
+    PUERTA_INT = 16         # GP16 (pin 21), sensor A, del lado del aula
+    PUERTA_EXT = 17         # GP17 (pin 22), sensor B, del lado del pasillo
+    # La OLED ya funciono a 400 kHz; si aparecen errores I2C, probar 100000.
+    I2C_FRECUENCIA = 400000
 
     INTERVALO_LECTURA_MS = 1000
     INTERVALO_PANTALLA_MS = 2000
@@ -50,7 +50,7 @@ class EstacionCalidadAire:
         usar_watchdog: reinicia el Pico W si el programa se cuelga mas de 8 s
         (en el Pico el maximo es 8,3 s).
         Activalo solo cuando ya funcione: una vez encendido no se puede apagar."""
-        i2c = I2C(self.I2C_ID, sda=Pin(self.I2C_SDA), scl=Pin(self.I2C_SCL), freq=100000)
+        i2c = I2C(self.I2C_ID, sda=Pin(self.I2C_SDA), scl=Pin(self.I2C_SCL), freq=self.I2C_FRECUENCIA)
         direcciones = i2c.scan()
         print("Dispositivos I2C:", [hex(d) for d in direcciones])
         if 0x3C not in direcciones:
@@ -70,8 +70,8 @@ class EstacionCalidadAire:
 
         # Los sensores de la puerta se leen en cada vuelta (no cada 1 s) para
         # no perderse a nadie; por eso no estan en la lista self.sensores.
-        self.puerta_ext = SensorUltrasonico("Puerta exterior", self.PUERTA_EXT_TRIG, self.PUERTA_EXT_ECHO)
-        self.puerta_int = SensorUltrasonico("Puerta interior", self.PUERTA_INT_TRIG, self.PUERTA_INT_ECHO)
+        self.puerta_ext = SensorTCRT5000("Puerta exterior", self.PUERTA_EXT)
+        self.puerta_int = SensorTCRT5000("Puerta interior", self.PUERTA_INT)
         self.personas = ContadorPersonas(self.puerta_ext, self.puerta_int)
 
         self.lectura = Contador(self.INTERVALO_LECTURA_MS)
@@ -97,7 +97,6 @@ class EstacionCalidadAire:
             "lim_pm25": list(self.pantalla.LIMITES_PM25),
             "t_lectura": self.lectura.intervalo_ms,
             "t_pantalla": self.refresco.intervalo_ms,
-            "umbral_cm": self.personas.umbral_cm,
         }
         try:
             with open(self.ARCHIVO_AJUSTES, "w") as archivo:
@@ -111,8 +110,6 @@ class EstacionCalidadAire:
                 ajustes = json.load(archivo)
             self.pantalla.cambiar_limites(ajustes["lim_co2"], ajustes["lim_pm25"])
             self._cambiar_intervalos(ajustes["t_lectura"], ajustes["t_pantalla"])
-            if "umbral_cm" in ajustes:
-                self.personas.cambiar_umbral(ajustes["umbral_cm"])
             print("Ajustes guardados recuperados")
         except OSError:
             pass  # aun no hay archivo: se usan los valores de fabrica
@@ -143,9 +140,6 @@ class EstacionCalidadAire:
         if accion == "resetear":
             self.personas.resetear()
             return "Conteo de personas en cero"
-        if accion == "umbral":
-            self.personas.cambiar_umbral(comando.get("cm"))
-            return "Umbral de la puerta: {} cm".format(self.personas.umbral_cm)
         raise ValueError("Accion desconocida para el conteo de personas")
 
     def _comando_ideal(self, comando):
@@ -206,15 +200,19 @@ class EstacionCalidadAire:
 
             if self.lectura.listo():
                 # Polimorfismo: cada sensor responde a leer() a su manera.
+                # Despues de cada uno se revisa de nuevo la puerta.
                 for sensor in self.sensores:
                     sensor.leer()
+                    self.personas.actualizar()
                 if self.ideal.midiendo():
                     self.ideal.actualizar(
                         self.pantalla.resumen(self.gas, self.ambiental, self.dht),
                         self._sensores_responden(),
                     )
 
-            if self.refresco.listo():
+            # Mientras alguien cruza la puerta no se redibuja la OLED (es lento):
+            # se espera a que termine para no perder el cruce.
+            if not self.personas.cruzando() and self.refresco.listo():
                 self.pantalla.mostrar(self.gas, self.ambiental, self.dht, self.ideal, self.personas)
                 self.enlace.enviar_datos(self._estado())
                 gc.collect()
@@ -235,7 +233,7 @@ class EstacionCalidadAire:
             while True:
                 self.paso()
                 # Pausa corta: la puerta necesita revisarse seguido.
-                time.sleep_ms(20)
+                time.sleep_ms(5)
         except KeyboardInterrupt:
             print("Programa detenido desde Thonny")
         finally:
