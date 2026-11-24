@@ -9,7 +9,7 @@ class SensorUltrasonico(Sensor):
     """HC-SR04: mide la distancia (cm) al objeto que tiene enfrente.
 
     - Envia un pulso de ultrasonido y mide cuanto tarda en volver el eco.
-    - El pin ECHO entrega 5 V: conectarlo al ESP32 con un divisor de voltaje
+    - El pin ECHO entrega 5 V: conectarlo al Pico W con un divisor de voltaje
       (por ejemplo 1 kOhm y 2 kOhm) para bajarlo a 3,3 V.
     - Solo espera el eco hasta distancia_max_cm: mas lejos se considera "libre".
       Asi cada lectura tarda pocos milisegundos y no frena el programa.

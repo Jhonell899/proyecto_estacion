@@ -15,7 +15,7 @@ class AmbienteIdeal:
       3. LISTO: guarda los promedios en ideal.json como el "ambiente ideal".
          Se recupera al encender y se borra con resetear().
 
-    Si se reinicia el ESP32 a mitad de la medicion, esa medicion se pierde
+    Si se reinicia el Pico W a mitad de la medicion, esa medicion se pierde
     (el ideal guardado antes, si habia uno, se conserva).
     """
 

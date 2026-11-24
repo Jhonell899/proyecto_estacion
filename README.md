@@ -1,4 +1,4 @@
-# Estación de calidad del aire (ESP32 + MicroPython, POO)
+# Estación de calidad del aire (Raspberry Pi Pico W + MicroPython, POO)
 
 Mide CO2, temperatura, humedad, **polvo y humo** en un aula, **cuenta cuántas
 personas entran y salen** por la puerta, califica el aire y lo muestra en una pantalla OLED y por consola. Si falta algún dispositivo, avisa y sigue
@@ -11,19 +11,28 @@ guarda un **historial** con fecha y hora (ver más abajo).
 
 ## Hardware
 
-| Componente | Qué mide | Conexión | Pines ESP32 | Alimentación |
+Placa: **Raspberry Pi Pico W** (RP2040) con MicroPython.
+
+| Componente | Qué mide | Conexión | Pines Pico W (GPxx = pin físico) | Alimentación |
 |---|---|---|---|---|
-| SCD40 | CO2, temperatura, humedad | I2C (0x62) | SDA 21, SCL 22 | 3,3 V |
-| OLED SSD1306 128x64 | (pantalla) | I2C (0x3C) | SDA 21, SCL 22 | 3,3 V |
-| PMS5003 | PM1.0, PM2.5, PM10 | UART 9600 | TX sensor → 16, RX sensor → 17 | 5 V |
-| DHT11 | Temperatura, humedad (respaldo) | 1 cable de datos | DATA → 4 | 3,3 V |
-| HC-SR04 exterior (puerta) | Personas que pasan | TRIG / ECHO | TRIG 5, ECHO 18 | 5 V |
-| HC-SR04 interior (puerta) | Personas que pasan | TRIG / ECHO | TRIG 19, ECHO 23 | 5 V |
+| SCD40 | CO2, temperatura, humedad | I2C0 (0x62) | SDA GP4 (6), SCL GP5 (7) | 3V3 OUT (36) |
+| OLED SSD1306 128x64 | (pantalla) | I2C0 (0x3C) | SDA GP4 (6), SCL GP5 (7) | 3V3 OUT (36) |
+| PMS5003 | PM1.0, PM2.5, PM10 | UART0 9600 | TX sensor → GP1 (2), RX sensor → GP0 (1) | VBUS 5 V (40) |
+| DHT11 | Temperatura, humedad (respaldo) | 1 cable de datos | DATA → GP15 (20) | 3V3 OUT (36) |
+| HC-SR04 exterior (puerta) | Personas que pasan | TRIG / ECHO | TRIG GP16 (21), ECHO GP17 (22) | VBUS 5 V (40) |
+| HC-SR04 interior (puerta) | Personas que pasan | TRIG / ECHO | TRIG GP18 (24), ECHO GP19 (25) | VBUS 5 V (40) |
 
-El SCD40 y la OLED comparten los mismos dos cables I2C.
+- El SCD40 y la OLED comparten los mismos dos cables I2C.
+- **GND:** todos los GND juntos, a cualquier pin GND del Pico (3, 8, 13, 18, 23, 28, 33 o 38).
+- **VBUS (pin 40)** entrega los 5 V del cable USB: alcanza para el PMS5003 y los dos HC-SR04.
+  **3V3 OUT (pin 36)** es la salida de 3,3 V. No uses el pin 39 (VSYS) ni el 37 (3V3_EN).
+- No uses GP23, GP24, GP25 ni GP29: en el Pico W están ocupados por el chip WiFi.
 
-**Importante:** el pin ECHO de cada HC-SR04 entrega 5 V. Conéctalo al ESP32 con un divisor de
-voltaje (por ejemplo, 1 kΩ en serie y 2 kΩ a tierra) para bajarlo a 3,3 V.
+**Importante:** los pines del Pico W **no soportan 5 V**. El pin ECHO de cada HC-SR04 entrega 5 V:
+conéctalo con un divisor de voltaje (por ejemplo, 1 kΩ en serie y 2 kΩ a tierra) para bajarlo
+a 3,3 V. El TX del PMS5003 ya trabaja a 3,3 V y va directo.
+
+Si quieres cambiar algún pin, se cambia en la parte *Configuración* de `main.py`.
 
 ## Archivos
 
@@ -37,7 +46,7 @@ proyecto richar/
 ├── captura.png                Cómo se ve el software de control
 ├── registros/                 Se crea sola: un archivo .csv por día con las mediciones
 ├── esp32.py                   Programa antiguo del sensor ultrasónico (no se usa aquí)
-└── jhonell.sensorcalidad/     Todo lo que va al ESP32 (y nada más)
+└── jhonell.sensorcalidad/     Todo lo que va al Pico W (y nada más)
     ├── main.py                Clase EstacionCalidadAire (programa principal)
     ├── Sensor.py              Clase Sensor (clase base)
     ├── Sensorgas.py           Clase SensorGas (SCD40), hereda de Sensor
@@ -51,7 +60,7 @@ proyecto richar/
     └── Contador.py            Clase Contador (temporizador)
 ```
 
-Regla simple: **todo lo que está dentro de `jhonell.sensorcalidad/` se copia al ESP32**;
+Regla simple: **todo lo que está dentro de `jhonell.sensorcalidad/` se copia al Pico W**;
 lo que está afuera se queda en la PC.
 
 ## Clases
@@ -120,7 +129,7 @@ lo que está afuera se queda en la PC.
 
 ## Funcionamiento
 
-1. Al encender, `EstacionCalidadAire` crea el bus I2C, el puerto serie, los sensores y la pantalla.
+1. Al encender, `EstacionCalidadAire` crea el bus I2C0, el puerto serie UART0, los sensores y la pantalla.
 2. Cada 1 s llama a `leer()` de los tres sensores (el DHT11 lee como máximo cada 2,5 s).
 3. Cada 2 s `Comunicador` actualiza la OLED y la consola. La pantalla rota cada 5 s entre
    5 páginas, con el título en la franja amarilla superior:
@@ -158,7 +167,7 @@ separados unos 15-20 cm: el **exterior** del lado del pasillo y el **interior** 
   repetirse 2 veces seguidas.
 - **Alumnos en el aula** = entradas − salidas, y nunca baja de 0. El software muestra los
   alumnos en el aula y cuántos salieron.
-- Los totales se guardan en el ESP32 (`conteo.json`) y se recuperan al encender.
+- Los totales se guardan en el Pico W (`conteo.json`) y se recuperan al encender.
   **Reiniciar conteo** los pone en cero (por ejemplo, al empezar el día).
 - Los sensores se leen de a uno, alternándolos, para que el eco de uno no confunda al otro.
 - Limitación: si dos personas cruzan a la vez, muy juntas, cuenta una sola.
@@ -174,14 +183,14 @@ Se inicia desde el software de la PC y pasa por tres etapas:
    termina en **FALLO** e indica cuál.
 2. **Medición** (60 min por defecto, de 1 a 240): promedia todas las lecturas del ambiente.
    Durante la medición no se puede dormir el PMS5003. **No ventilar ni cambiar el aula.**
-3. **Listo:** guarda los promedios en el ESP32 (`ideal.json`). Se recuperan al encender.
+3. **Listo:** guarda los promedios en el Pico W (`ideal.json`). Se recuperan al encender.
 
 Desde entonces, cada tarjeta del software muestra `Ideal: 650 (+120)`: el valor ideal y cuánto
 se aleja la lectura actual. La OLED lo muestra en la página **VS IDEAL**.
 
 **Resetear** borra el ambiente ideal guardado (pide confirmación). Durante una medición, el mismo
 botón dice **Cancelar**: detiene la medición y también borra el ideal anterior.
-Si el ESP32 se reinicia a mitad de la medición, esa medición se pierde y hay que iniciarla de nuevo.
+Si el Pico W se reinicia a mitad de la medición, esa medición se pierde y hay que iniciarla de nuevo.
 
 ## Calificación del aire y alertas
 
@@ -230,13 +239,18 @@ Cuando una llega a MALO o peor, se indica la causa probable:
 
 Mientras el sensor de polvo y humo (PMS5003) se calienta (30 s) no se dan alertas.
 
-## Cómo cargarlo al ESP32
+## Cómo cargarlo al Pico W
 
-1. Grabar el firmware MicroPython v1.23.0 (ESP32_GENERIC).
+1. Grabar el firmware MicroPython para **Pico W** (`RPI_PICO_W`, v1.23.0 o más nuevo): mantener
+   apretado el botón **BOOTSEL**, conectar el USB y arrastrar el archivo `.uf2` a la unidad
+   `RPI-RP2` que aparece. (También se puede hacer desde Thonny: *Herramientas → Opciones →
+   Intérprete → MicroPython (Raspberry Pi Pico) → Instalar o actualizar MicroPython*.)
 2. Instalar el controlador de la pantalla: `mpremote mip install ssd1306`
+   (el Pico W necesita internet para esto; si no, copia `ssd1306.py` a mano desde
+   micropython-lib). El módulo `dht` ya viene incluido en el firmware.
 3. Copiar los 11 archivos de `jhonell.sensorcalidad/` a la raíz de la placa (desde dentro de esa carpeta):
    `mpremote cp Sensor.py Sensorgas.py SensorAmbiental.py SensorDHT11.py SensorUltrasonico.py ContadorPersonas.py Comunicador.py EnlacePC.py AmbienteIdeal.py Contador.py main.py :`
-4. Reiniciar. Debe aparecer `Dispositivos I2C: ['0x3c', '0x62']`.
+4. Reiniciar (desconectar y conectar el USB). Debe aparecer `Dispositivos I2C: ['0x3c', '0x62']`.
 
 ## Software de control (PC)
 
@@ -275,7 +289,7 @@ calificación, las filas de la tabla y las líneas de los gráficos usan los mis
 
 Los cortes de CO2 y humo son los límites que tiene la estación (si los cambias en *Límites*,
 cambian también los colores). En la PC, MODERADO se muestra como **NORMAL** y MUY MALO como
-**RIESGOSO**; la pantalla OLED del ESP32 sigue usando los nombres originales.
+**RIESGOSO**; la pantalla OLED del Pico W sigue usando los nombres originales.
 
 **Indicadores de cantidades malas.** Cada lectura se compara con lo que se supone que debería
 haber en el aula (clase `Referencias`):
@@ -302,7 +316,7 @@ haber en el aula (clase `Referencias`):
 - la puerta: si los dos sensores responden, el umbral y *Reiniciar conteo*;
 - el registro: lugar, *Grabar cada N min*, cuántos registros van hoy, *Exportar a Excel* y *Abrir carpeta*.
 
-Los ajustes se guardan en el ESP32 (`ajustes.json`) y se recuperan al encender.
+Los ajustes se guardan en el Pico W (`ajustes.json`) y se recuperan al encender.
 
 **Historial:**
 - **Gráficos:** cuatro gráficos en el tiempo, con la hora abajo:
@@ -323,23 +337,23 @@ Los ajustes se guardan en el ESP32 (`ajustes.json`) y se recuperan al encender.
 **Alarma:** con MALO o MUY MALO suena un aviso cada 4 s. Se puede silenciar; si el aire mejora
 y vuelve a empeorar, suena otra vez.
 
-**Simulador:** el puerto "Simulador" imita a la estación, para probar sin el ESP32. En el
+**Simulador:** el puerto "Simulador" imita a la estación, para probar sin el Pico W. En el
 simulador, 1 minuto de medición del ambiente ideal dura 1 segundo.
 
 ### Cómo usarlo
 1. Instalar pyserial una vez: `pip install pyserial`
    (opcional, solo para *Exportar a Excel*: `pip install openpyxl`)
-2. Conectar el ESP32 por USB con `main.py` ya cargado.
+2. Conectar el Pico W por USB con `main.py` ya cargado.
 3. **Cerrar Thonny** (o desconectarlo): el puerto USB solo puede usarlo un programa a la vez.
-4. Ejecutar `python control_estacion.py`, elegir el puerto (por ejemplo `COM3`) y pulsar **Conectar**.
+4. Ejecutar `python control_estacion.py`, elegir el puerto (por ejemplo `COM3`; en Windows el Pico aparece como *Dispositivo serie USB*) y pulsar **Conectar**.
 
-Para dormir el PMS5003 por comando, el cable RX del sensor debe ir al GPIO17 del ESP32.
+Para dormir el PMS5003 por comando, el cable RX del sensor debe ir al GP0 (pin 1) del Pico W.
 
 ### Clases del software de control
 | Clase | Qué hace |
 |---|---|
 | `Enlace` | Clase base de la conexión: `conectar()`, `desconectar()`, `enviar()` |
-| `EnlaceSerial` (hereda de `Enlace`) | Conexión real con el ESP32 por USB, en un hilo aparte |
+| `EnlaceSerial` (hereda de `Enlace`) | Conexión real con el Pico W por USB, en un hilo aparte (activa DTR, que el Pico necesita para enviar) |
 | `EnlaceSimulado` (hereda de `Enlace`) | Estación de mentira para probar sin hardware |
 | `Alarma` | Decide cuándo avisar, silenciar y volver a sonar |
 | `VentanaControl` (hereda de `tk.Tk`) | La ventana principal: arma las zonas y atiende los botones |
@@ -365,15 +379,15 @@ Por el mismo cable USB que usa Thonny (115200 baudios), con líneas de texto:
 
 | Dirección | Mensaje | Ejemplo |
 |---|---|---|
-| ESP32 → PC | Lecturas y ajustes | `DATOS {"co2": 1234, "pm25": 9, "estado": "MALO", ...}` |
-| ESP32 → PC | Respuesta a un comando | `RESP {"ok": true, "msg": "Limites actualizados"}` |
-| PC → ESP32 | Cambiar límites | `{"cmd": "limites", "co2": [799, 1199, 1999], "pm25": [12, 35.4, 55.4]}` |
-| PC → ESP32 | Cambiar intervalos | `{"cmd": "intervalos", "lectura": 1000, "pantalla": 2000}` |
-| PC → ESP32 | Dormir/despertar PMS5003 | `{"cmd": "pms", "dormir": true}` |
-| PC → ESP32 | Medir el ambiente ideal | `{"cmd": "ideal", "accion": "iniciar", "minutos": 60}` |
-| PC → ESP32 | Borrar/cancelar el ambiente ideal | `{"cmd": "ideal", "accion": "resetear"}` |
-| PC → ESP32 | Cambiar el umbral de la puerta | `{"cmd": "personas", "accion": "umbral", "cm": 70}` |
-| PC → ESP32 | Reiniciar el conteo de personas | `{"cmd": "personas", "accion": "resetear"}` |
+| Pico W → PC | Lecturas y ajustes | `DATOS {"co2": 1234, "pm25": 9, "estado": "MALO", ...}` |
+| Pico W → PC | Respuesta a un comando | `RESP {"ok": true, "msg": "Limites actualizados"}` |
+| PC → Pico W | Cambiar límites | `{"cmd": "limites", "co2": [799, 1199, 1999], "pm25": [12, 35.4, 55.4]}` |
+| PC → Pico W | Cambiar intervalos | `{"cmd": "intervalos", "lectura": 1000, "pantalla": 2000}` |
+| PC → Pico W | Dormir/despertar PMS5003 | `{"cmd": "pms", "dormir": true}` |
+| PC → Pico W | Medir el ambiente ideal | `{"cmd": "ideal", "accion": "iniciar", "minutos": 60}` |
+| PC → Pico W | Borrar/cancelar el ambiente ideal | `{"cmd": "ideal", "accion": "resetear"}` |
+| PC → Pico W | Cambiar el umbral de la puerta | `{"cmd": "personas", "accion": "umbral", "cm": 70}` |
+| PC → Pico W | Reiniciar el conteo de personas | `{"cmd": "personas", "accion": "resetear"}` |
 
 ## Historial (con fecha y hora)
 
@@ -414,4 +428,4 @@ Excel, hay que cerrarlo antes de volver a exportar encima.
 ## Estado
 
 Probado en PC con sensores simulados, y el software de control con el simulador.
-Falta probarlo en el ESP32 con los sensores reales.
+Falta probarlo en el Pico W con los sensores reales.

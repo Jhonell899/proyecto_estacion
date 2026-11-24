@@ -14,7 +14,7 @@ class SensorAmbiental(Sensor):
     - Si pasan CADUCIDAD_MS sin tramas validas (cable suelto), los valores vuelven a None.
     - dormir() apaga el ventilador y el laser para alargar su vida; despertar()
       los enciende. Se hace por el pin SET si se paso pin_set, o si no con un
-      comando por el puerto serie (necesita el cable ESP32 TX -> RX del sensor).
+      comando por el puerto serie (necesita el cable TX del Pico (GP0) -> RX del sensor).
     """
 
     LARGO_TRAMA = 32
