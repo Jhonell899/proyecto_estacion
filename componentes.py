@@ -33,14 +33,8 @@ class Tema:
     AMBAR = "#f2b33d"
     ROJO = "#ff4d3d"
 
-    # Nombres anteriores, para el resto del programa
-    PANEL = TARJETA
-    PANEL_SUAVE = TARJETA
-    CABECERA_TABLA = TARJETA
-    AZUL = ACENTO
-    AZUL_OSCURO = ACENTO
+    # Nombre anterior, para el resto del programa
     GRIS = TEXTO_SUAVE
-    DESTACADO = CAMPO
 
     # Niveles: como los envia la estacion, como se muestran y su color
     NIVELES = ("BUENO", "MODERADO", "MALO", "MUY MALO")
@@ -658,10 +652,6 @@ class Aviso(_Compuesto):
 
     def _leer(self, clave):
         return self._mensaje
-
-    def repintar(self):
-        """Se mantiene por compatibilidad (el fondo ya es el de la tarjeta)."""
-        self._opcion("text", self._mensaje)
 
 
 # =====================================================================

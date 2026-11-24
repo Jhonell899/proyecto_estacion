@@ -17,7 +17,7 @@ class SensorDHT11(Sensor):
     CADUCIDAD_MS = 10000
     INTERVALO_MS = 2500
 
-    def __init__(self, pin=4):
+    def __init__(self, pin=15):
         super().__init__("DHT11")
         self._sensor = dht.DHT11(Pin(pin))
         self.temperatura = None

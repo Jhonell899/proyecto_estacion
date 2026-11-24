@@ -1,12 +1,12 @@
 """Software de control de la estacion de calidad del aire (se ejecuta en la PC).
 
-Recibe los datos del ESP32 por el cable USB, los muestra en una ventana,
+Recibe los datos del Raspberry Pi Pico W por el cable USB, los muestra en una ventana,
 avisa con una alarma cuando el aire es MALO o MUY MALO, permite cambiar
 los ajustes de la estacion y medir (o borrar) el ambiente ideal.
 
 Uso:   python control_estacion.py
-Requiere pyserial para conectarse al ESP32:   pip install pyserial
-(El puerto "Simulador" funciona sin ESP32 y sin pyserial.)
+Requiere pyserial para conectarse al Pico W:   pip install pyserial
+(El puerto "Simulador" funciona sin el Pico W y sin pyserial.)
 """
 import json
 import os
@@ -63,7 +63,7 @@ class Enlace:
 
 
 class EnlaceSerial(Enlace):
-    """Conexion real con el ESP32 por el puerto serie del cable USB."""
+    """Conexion real con el Pico W por el puerto serie del cable USB."""
 
     BAUDIOS = 115200
 
@@ -91,8 +91,9 @@ class EnlaceSerial(Enlace):
             serie.port = puerto
             serie.baudrate = self.BAUDIOS
             serie.timeout = 0.2
-            # DTR/RTS apagados: en el ESP32 DevKit pueden dejar la placa en reinicio.
-            serie.dtr = False
+            # DTR encendido: el USB del Pico W solo envia datos cuando la PC
+            # activa DTR (como hace Thonny). En el Pico no reinicia la placa.
+            serie.dtr = True
             serie.rts = False
             serie.open()
             self._serie = serie
@@ -126,9 +127,9 @@ class EnlaceSerial(Enlace):
 
 
 class EnlaceSimulado(Enlace):
-    """Estacion de mentira para probar el programa sin el ESP32.
+    """Estacion de mentira para probar el programa sin el Pico W.
 
-    Imita al ESP32: envia lecturas cada cierto tiempo y obedece los mismos comandos.
+    Imita al Pico W: envia lecturas cada cierto tiempo y obedece los mismos comandos.
     Para no esperar una hora, en el simulador 1 minuto de medicion dura 1 segundo.
     """
 
@@ -813,7 +814,7 @@ class VentanaControl(tk.Tk):
         elif tipo == "RESP":
             self.registrar(("OK: " if contenido.get("ok") else "ERROR: ") + str(contenido.get("msg")))
         elif tipo == "TEXTO":
-            # La linea de lecturas que el ESP32 repite para Thonny no se muestra.
+            # La linea de lecturas que el Pico W repite para Thonny no se muestra.
             if " | " not in contenido:
                 self.registrar(contenido)
         elif tipo == "ERROR":

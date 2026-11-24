@@ -21,20 +21,24 @@ class EstacionCalidadAire:
     Ademas atiende los comandos del software de control de la PC (ver EnlacePC).
     """
 
-    # ---------- Configuracion ----------
-    # I2C compartido: SCD40 (0x62) + OLED SSD1306 (0x3C)
-    I2C_SDA = 21
-    I2C_SCL = 22
-    # PMS5003: TX del sensor -> RX del ESP32 (GPIO16)
-    PMS_RX = 16
-    PMS_TX = 17
+    # ---------- Configuracion (Raspberry Pi Pico W) ----------
+    # Numeros GPxx del Pico W; entre parentesis, el pin fisico de la placa.
+    # No usar GP23, GP24, GP25 ni GP29: el Pico W los usa por dentro para el WiFi.
+    # I2C0 compartido: SCD40 (0x62) + OLED SSD1306 (0x3C)
+    I2C_ID = 0
+    I2C_SDA = 4             # GP4 (pin 6)
+    I2C_SCL = 5             # GP5 (pin 7)
+    # PMS5003 por UART0: TX del sensor -> RX del Pico (GP1); TX del Pico (GP0) -> RX del sensor
+    UART_ID = 0
+    PMS_TX = 0              # GP0 (pin 1)
+    PMS_RX = 1              # GP1 (pin 2)
     # DHT11: pin de datos
-    DHT_PIN = 4
+    DHT_PIN = 15            # GP15 (pin 20)
     # HC-SR04 de la puerta (ECHO con divisor de voltaje a 3,3 V)
-    PUERTA_EXT_TRIG = 5     # sensor del lado del pasillo
-    PUERTA_EXT_ECHO = 18
-    PUERTA_INT_TRIG = 19    # sensor del lado del aula
-    PUERTA_INT_ECHO = 23
+    PUERTA_EXT_TRIG = 16    # GP16 (pin 21), sensor del lado del pasillo
+    PUERTA_EXT_ECHO = 17    # GP17 (pin 22)
+    PUERTA_INT_TRIG = 18    # GP18 (pin 24), sensor del lado del aula
+    PUERTA_INT_ECHO = 19    # GP19 (pin 25)
 
     INTERVALO_LECTURA_MS = 1000
     INTERVALO_PANTALLA_MS = 2000
@@ -43,9 +47,10 @@ class EstacionCalidadAire:
 
     def __init__(self, altitud_m=None, usar_watchdog=False):
         """altitud_m: altitud del lugar; mejora la precision del CO2 en zonas altas.
-        usar_watchdog: reinicia el ESP32 si el programa se cuelga mas de 8 s.
+        usar_watchdog: reinicia el Pico W si el programa se cuelga mas de 8 s
+        (en el Pico el maximo es 8,3 s).
         Activalo solo cuando ya funcione: una vez encendido no se puede apagar."""
-        i2c = I2C(0, sda=Pin(self.I2C_SDA), scl=Pin(self.I2C_SCL), freq=100000)
+        i2c = I2C(self.I2C_ID, sda=Pin(self.I2C_SDA), scl=Pin(self.I2C_SCL), freq=100000)
         direcciones = i2c.scan()
         print("Dispositivos I2C:", [hex(d) for d in direcciones])
         if 0x3C not in direcciones:
@@ -53,7 +58,7 @@ class EstacionCalidadAire:
         if 0x62 not in direcciones:
             print("Aviso: SCD40 no detectado en 0x62")
 
-        uart = UART(2, baudrate=9600, rx=self.PMS_RX, tx=self.PMS_TX)
+        uart = UART(self.UART_ID, baudrate=9600, tx=Pin(self.PMS_TX), rx=Pin(self.PMS_RX))
 
         self.gas = SensorGas(i2c, altitud_m=altitud_m)
         self.ambiental = SensorAmbiental(uart)
