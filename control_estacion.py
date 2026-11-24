@@ -474,6 +474,15 @@ class VentanaControl(tk.Tk):
                                   font=Tema.fuente(9))
         self._conexion.pack(side="left")
 
+        leyenda = tk.Frame(marco, bg=Tema.FONDO)
+        leyenda.pack(side="left", padx=(48, 0))
+        fila = tk.Frame(leyenda, bg=Tema.FONDO)
+        fila.pack(anchor="w", pady=(2, 0))
+        for nombre, color in zip(Tema.NOMBRES, Tema.COLOR_NIVEL):
+            tk.Label(fila, text="●", bg=Tema.FONDO, fg=color, font=Tema.fuente(12)).pack(side="left")
+            tk.Label(fila, text=nombre, bg=Tema.FONDO, fg=Tema.TEXTO, font=Tema.fuente(9)).pack(
+                side="left", padx=(2, 12))
+
         reloj = tk.Frame(marco, bg=Tema.FONDO)
         reloj.pack(side="right")
         self._hora = tk.Label(reloj, text="", bg=Tema.FONDO, fg=Tema.TEXTO, font=Tema.fuente(20))
@@ -577,8 +586,9 @@ class VentanaControl(tk.Tk):
         panel.pack(fill="x", pady=(12, 0))
         tabla = tk.Frame(panel.cuerpo, bg=panel.cuerpo.cget("bg"))
         tabla.pack(fill="x", pady=(2, 0))
-        for columna, texto in enumerate(("", "BUENO ≤", "MODERADO ≤", "MALO ≤")):
-            tk.Label(tabla, text=texto, bg=Tema.TARJETA, fg=Tema.TEXTO_SUAVE, font=Tema.fuente(8),
+        for columna, texto in enumerate(("", "BUENO ≤", "NORMAL ≤", "MALO ≤")):
+            tk.Label(tabla, text=texto, bg=Tema.TARJETA,
+                     fg=Tema.COLOR_NIVEL[columna - 1] if columna else Tema.TEXTO_SUAVE, font=Tema.fuente(8),
                      anchor="w" if columna == 0 else "center").grid(row=0, column=columna, sticky="ew")
         self._lim_co2 = self._fila_entradas(tabla, 1, "CO2 ppm", 3)
         self._lim_pm25 = self._fila_entradas(tabla, 2, "HUMO µg/m³", 3)
@@ -846,7 +856,7 @@ class VentanaControl(tk.Tk):
             elif alerta:
                 self._aviso.config(text="ALERTA: {}. {}".format(*alerta))
             else:
-                self._aviso.config(text="ALARMA: aire {}. Ventila el aula.".format(estado))
+                self._aviso.config(text="ALARMA: aire {}. Ventila el aula.".format(Tema.nombre(estado)))
             self._boton_silenciar.config(state="disabled" if self.alarma.silenciada else "normal")
         else:
             if datos.get("pms_dormido"):

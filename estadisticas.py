@@ -340,8 +340,6 @@ class GraficoLinea(tk.Canvas):
     def _titulo(self):
         x = 2
         self.create_text(x, 8, anchor="nw", fill=self.TEXTO, font=Tema.fuente(10), text=self.titulo.upper())
-        if self.mostrar_unidad and self.unidad:
-            self.create_text(x, 26, anchor="nw", fill=self.TEXTO_SUAVE, font=Tema.fuente(8), text=self.unidad)
 
     def _sin_datos(self):
         self.create_text(self._ancho / 2, self._alto / 2, fill=self.TEXTO_EJE,
@@ -480,12 +478,13 @@ class GraficoTiempo(GraficoLinea):
         return "{} {} {} {}".format(momento.day, cls.MESES[momento.month - 1], momento.year,
                                     momento.strftime("%H:%M:%S" if segundos else "%H:%M"))
 
-    def mostrar_series(self, series, segundos=True, referencias=()):
+    def mostrar_series(self, series, segundos=True, referencias=(), clave=None):
         """series: lista de (nombre, momentos, valores, decimales). Todas en la unidad del grafico.
         referencias: lineas de limite [(valor, texto, "max" o "min")] (lo que se supone que deberia haber)."""
         self._series = [(n, [(m, v) for m, v in zip(ms, vs) if v is not None], d) for n, ms, vs, d in series]
         self._segundos = segundos
         self.referencias = list(referencias)
+        self.clave = clave          # si se da, la linea se pinta con el color de cada nivel
         self._dibujar()
 
     def _color(self, i):
@@ -513,27 +512,34 @@ class GraficoTiempo(GraficoLinea):
         for valor, texto, _tipo in getattr(self, "referencias", []):
             y = self._py(valor)
             self.create_line(izq, y, der, y, fill="#8a3a28", dash=(5, 4), width=1.2)
-            self.create_text(der, y - 2, anchor="se", text=texto, fill=Tema.ACENTO, font=Tema.fuente(8))
+            self.create_text(izq + 4, y - 2, anchor="sw", text=texto, fill=Tema.ACENTO, font=Tema.fuente(8))
         # Cada serie es una linea continua; el ultimo valor lleva un punto.
         for i, (_, puntos, _) in enumerate(self._series):
             coords = [(self._px(m.timestamp()), self._py(v)) for m, v in puntos]
-            if len(coords) > 1:
+            if getattr(self, "clave", None) and len(self._series) == 1:
+                self._colorear_niveles(puntos, coords)
+            elif len(coords) > 1:
                 self.create_line(*[c for p in coords for c in p], fill=self._color(i), width=2.2)
-            if len(self._series) == 1:
-                self._marcar_fuera(puntos, coords)
             if coords:
                 cx, cy = coords[-1]
                 self.create_oval(cx - 4, cy - 4, cx + 4, cy + 4, fill=self._color(i), outline=self.SUPERFICIE,
                                  width=2)
         self._puntos = momentos
 
-    def _marcar_fuera(self, puntos, coords):
-        """Repinta en naranja (por encima del maximo) o ambar (por debajo del minimo) los tramos malos."""
-        for valor, _texto, tipo in getattr(self, "referencias", []):
-            color = Tema.ACENTO if tipo == "max" else Tema.AMBAR
-            for (_, a), (_, b), p, q in zip(puntos, puntos[1:], coords, coords[1:]):
-                if (tipo == "max" and a > valor and b > valor) or (tipo == "min" and a < valor and b < valor):
-                    self.create_line(p[0], p[1], q[0], q[1], fill=color, width=3)
+    def _colorear_niveles(self, puntos, coords):
+        """Cada tramo de la linea con el color de su nivel: verde, amarillo, naranja o rojo."""
+        tramo, color_tramo = [], None
+        for (_, valor), punto in zip(puntos, coords):
+            color = Referencias.color(self.clave, valor)
+            if color != color_tramo and tramo:
+                tramo.append(punto)            # une con el tramo siguiente
+                if len(tramo) > 1:
+                    self.create_line(*[c for p in tramo for c in p], fill=color_tramo, width=2.4)
+                tramo = []
+            tramo.append(punto)
+            color_tramo = color
+        if len(tramo) > 1:
+            self.create_line(*[c for p in tramo for c in p], fill=color_tramo, width=2.4)
 
     def _tabla_resumen(self):
         """Promedio y ultimo valor de cada serie, como en los paneles de monitoreo."""
@@ -698,6 +704,8 @@ class PanelEstadistica(Panel):
                                        [anchos.get(c, 100) for c in claves])
         self.detalle = False
         self.tabla_datos.configure(displaycolumns=self.TABLA_BASICA)
+        for indice, color in enumerate(Tema.COLOR_NIVEL):
+            self.tabla_datos.tag_configure("nivel{}".format(indice), foreground=color)
         barra = ttk.Scrollbar(marco, orient="vertical", command=self.tabla_datos.yview)
         self.tabla_datos.configure(yscrollcommand=barra.set)
         self.tabla_datos.pack(side="left", fill="both", expand=True)
@@ -731,7 +739,8 @@ class PanelEstadistica(Panel):
                     momentos, valores = self.datos.serie_tiempo(clave_registro)
                 datos.append((nombre, momentos, valores, decimales))
             claves = [c for _n, c, _r, _d in series if c != "pm1"]       # el humo fino usa el limite del humo
-            grafico.mostrar_series(datos, segundos=en_vivo, referencias=Referencias.lineas(claves))
+            grafico.mostrar_series(datos, segundos=en_vivo, referencias=Referencias.lineas(claves),
+                                   clave=claves[0] if len(series) == 1 else None)
 
     def actualizar(self):
         """Vuelve a leer los registros de hoy del lugar actual y redibuja todo."""
@@ -747,7 +756,10 @@ class PanelEstadistica(Panel):
                        "calidad": fila.get("calidad", "")}
             for clave, v in por_clave.items():
                 valores[clave] = numero(fila[clave], v.decimales)
-            self.tabla_datos.insert("", "end", values=[valores[c] for c in self.TABLA_BASICA + self.TABLA_DETALLE])
+            indice = Tema.indice(valores["calidad"])
+            valores["calidad"] = Tema.nombre(valores["calidad"])
+            self.tabla_datos.insert("", "end", values=[valores[c] for c in self.TABLA_BASICA + self.TABLA_DETALLE],
+                                    tags=("nivel{}".format(indice),) if indice is not None else ())
 
     def alternar_detalle(self):
         """Muestra u oculta las columnas de detalle (temperatura, humedad, humo muy fino)."""

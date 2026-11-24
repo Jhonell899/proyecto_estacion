@@ -262,6 +262,21 @@ pantalla de 1920×1080 (la ventana mide unos 1730×970). No hace falta instalar 
 | **08 Límites** | Límites de la calificación (CO2 y humo), *Aplicar* y **Más ajustes** |
 | **09 Historial** | Gráficos de puntos de la última hora o de hoy, y la tabla de datos (ver abajo) |
 
+**Colores: se ve de un vistazo si cada valor es bueno o malo.** Todos los números, la
+calificación, las filas de la tabla y las líneas de los gráficos usan los mismos 4 colores
+(la leyenda está arriba de la ventana):
+
+| Color | Nivel | CO2 (ppm) | Humo (µg/m³) | Polvo (µg/m³) | Temperatura (°C) | Humedad (%) | Alumnos |
+|---|---|---|---|---|---|---|---|
+| 🟢 verde | **BUENO** | hasta 799 | hasta 12 | hasta 54 | 20–26 | 40–60 | hasta 24 |
+| 🟡 amarillo | **NORMAL** | hasta 1199 | hasta 35,4 | hasta 154 | 18–28 | 30–70 | hasta 30 (aforo) |
+| 🟠 naranja | **MALO** | hasta 1999 | hasta 55,4 | hasta 254 | 16–30 | 20–80 | hasta 35 |
+| 🔴 rojo | **RIESGOSO** | más | más | más | fuera de eso | fuera de eso | más de 35 |
+
+Los cortes de CO2 y humo son los límites que tiene la estación (si los cambias en *Límites*,
+cambian también los colores). En la PC, MODERADO se muestra como **NORMAL** y MUY MALO como
+**RIESGOSO**; la pantalla OLED del ESP32 sigue usando los nombres originales.
+
 **Indicadores de cantidades malas.** Cada lectura se compara con lo que se supone que debería
 haber en el aula (clase `Referencias`):
 

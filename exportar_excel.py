@@ -26,6 +26,7 @@ from openpyxl.styles import Alignment, Border, Font, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
+from componentes import Tema
 from estadisticas import VARIABLES, RegistroDatos
 
 
@@ -47,8 +48,8 @@ class ExportadorExcel:
     TEXTO = "1D2430"
     SUAVE = "6F7782"
     LINEA = "C9D1DC"
-    NIVELES = ("BUENO", "MODERADO", "MALO", "MUY MALO")
-    COLOR_NIVEL = {"BUENO": "2E7D32", "MODERADO": "B28704", "MALO": "E65100", "MUY MALO": "C62828"}
+    NIVELES = Tema.NOMBRES                       # BUENO, NORMAL, MALO, RIESGOSO
+    COLOR_NIVEL = {"BUENO": "2E7D32", "NORMAL": "B28704", "MALO": "E65100", "RIESGOSO": "C62828"}
     POR_CLAVE = {v.clave: v for v in VARIABLES}
 
     def __init__(self, filas, lugar=""):
@@ -142,7 +143,7 @@ class ExportadorExcel:
             Columna("Hora", lambda n, f: f["momento"].time(), "hh:mm", 8),
             Columna("Alumnos", lambda n, f: f["estudiantes"], "0", 10),
             medida("co2"), medida("humo"), medida("polvo"),
-            Columna("Calidad", lambda n, f: f.get("calidad") or None, None, 12),
+            Columna("Calidad", lambda n, f: Tema.nombre(f.get("calidad")) or None, None, 12),
             Columna("Día", lambda n, f: RegistroDatos.DIAS[f["momento"].weekday()], None, 11, True),
             Columna("Lugar", lambda n, f: f["lugar"], None, 26, True),
             medida("temp", True), medida("hum", True), medida("humo_fino", True),

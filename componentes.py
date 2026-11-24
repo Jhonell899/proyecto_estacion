@@ -42,9 +42,10 @@ class Tema:
     GRIS = TEXTO_SUAVE
     DESTACADO = CAMPO
 
-    # Color de cada nivel: BUENO, MODERADO, MALO, MUY MALO
+    # Niveles: como los envia la estacion, como se muestran y su color
     NIVELES = ("BUENO", "MODERADO", "MALO", "MUY MALO")
-    COLOR_NIVEL = ("#4cc38a", "#f2b33d", "#ff8a3d", "#ff4d3d")
+    NOMBRES = ("BUENO", "NORMAL", "MALO", "RIESGOSO")
+    COLOR_NIVEL = ("#4cc38a", "#f2d23d", "#ff8a3d", "#ff4d3d")      # verde, amarillo, naranja, rojo
     COLOR_NEUTRO = "#8c8f95"
 
     _mono = None
@@ -63,9 +64,26 @@ class Tema:
         return (cls.mono(), tamano, "bold" if negrita else "normal")
 
     @classmethod
+    def indice(cls, estado):
+        """0-3 a partir del numero, del nombre de la estacion ("MUY MALO") o del simple ("RIESGOSO")."""
+        if isinstance(estado, int):
+            return estado if 0 <= estado < 4 else None
+        for lista in (cls.NIVELES, cls.NOMBRES):
+            if estado in lista:
+                return lista.index(estado)
+        return None
+
+    @classmethod
+    def nombre(cls, estado):
+        """Nombre simple para mostrar: MODERADO -> NORMAL, MUY MALO -> RIESGOSO."""
+        indice = cls.indice(estado)
+        return cls.NOMBRES[indice] if indice is not None else estado
+
+    @classmethod
     def color_de(cls, estado):
-        """Color de un nivel por su nombre ("MALO"), o el neutro si no es un nivel."""
-        return cls.COLOR_NIVEL[cls.NIVELES.index(estado)] if estado in cls.NIVELES else cls.COLOR_NEUTRO
+        """Color de un nivel (numero o nombre), o el neutro si no es un nivel."""
+        indice = cls.indice(estado)
+        return cls.COLOR_NIVEL[indice] if indice is not None else cls.COLOR_NEUTRO
 
     @classmethod
     def aplicar_estilos(cls, raiz):
@@ -202,14 +220,58 @@ class Referencias:
         "dentro": (None, 30, "alumnos", "AFORO"),
     }
 
+    # Nivel de cada medicion (BUENO, NORMAL, MALO; mas alla es RIESGOSO).
+    # ESCALAS: hasta cuanto es cada nivel. BANDAS: entre que valores es cada nivel.
+    ESCALAS = {
+        "co2": (799, 1199, 1999),
+        "pm25": (12, 35.4, 55.4),
+        "pm1": (12, 35.4, 55.4),
+        "pm10": (54, 154, 254),
+        "dentro": (24, 30, 35),          # hasta 80 % del aforo, el aforo, un poco mas
+    }
+    BANDAS = {
+        "temp": ((20, 26), (18, 28), (16, 30)),
+        "hum": ((40, 60), (30, 70), (20, 80)),
+    }
+
     @classmethod
     def actualizar_limites(cls, lim_co2=None, lim_pm25=None):
-        """Usa el maximo de BUENO que tiene configurado la estacion."""
+        """Usa los limites que tiene configurados la estacion."""
         if lim_co2:
             cls.RANGOS["co2"] = (None, lim_co2[0], "ppm", "CO2")
+            cls.ESCALAS["co2"] = tuple(lim_co2)
         if lim_pm25:
             cls.RANGOS["pm25"] = (None, lim_pm25[0], "µg/m³", "HUMO")
             cls.RANGOS["pm1"] = (None, lim_pm25[0], "µg/m³", "HUMO FINO")
+            cls.ESCALAS["pm25"] = cls.ESCALAS["pm1"] = tuple(lim_pm25)
+
+    @classmethod
+    def nivel(cls, clave, valor):
+        """0 BUENO, 1 NORMAL, 2 MALO, 3 RIESGOSO (None si no hay valor)."""
+        if valor is None:
+            return None
+        if clave in cls.ESCALAS:
+            for indice, limite in enumerate(cls.ESCALAS[clave]):
+                if valor <= limite:
+                    return indice
+            return 3
+        if clave in cls.BANDAS:
+            for indice, (minimo, maximo) in enumerate(cls.BANDAS[clave]):
+                if minimo <= valor <= maximo:
+                    return indice
+            return 3
+        return None
+
+    @classmethod
+    def color(cls, clave, valor, sin_dato=Tema.TEXTO):
+        """Color del nivel de la lectura: verde, amarillo, naranja o rojo."""
+        indice = cls.nivel(clave, valor)
+        return sin_dato if indice is None else Tema.COLOR_NIVEL[indice]
+
+    @classmethod
+    def nombre_nivel(cls, clave, valor):
+        indice = cls.nivel(clave, valor)
+        return "--" if indice is None else Tema.NOMBRES[indice]
 
     @staticmethod
     def _numero(valor):
@@ -241,25 +303,28 @@ class Referencias:
         desvio = cls.desvio(clave, valor)
         if desvio is None:
             return ("RECOM. " + cls.rango(clave), Tema.TEXTO_SUAVE)
+        color = cls.color(clave, valor)
+        nombre = cls.nombre_nivel(clave, valor)
         if desvio == 0:
-            return ("✓ " + ("" if corto else "OK · ") + cls.rango(clave), Tema.VERDE)
-        marca, color = ("▲", Tema.ACENTO) if desvio > 0 else ("▼", Tema.AMBAR)
+            return (("✓ " if corto else nombre + " · ") + cls.rango(clave), color)
+        marca = "▲" if desvio > 0 else "▼"
         if corto:
             return ("{} {:+g}".format(marca, round(desvio, 1)), color)
-        return ("{} {:+g} · RECOM. {}".format(marca, round(desvio, 1), cls.rango(clave)), color)
+        return ("{} · {} {:+g} (RECOM. {})".format(nombre, marca, round(desvio, 1), cls.rango(clave)), color)
 
     @classmethod
     def resumen(cls, valores):
         """Que esta fuera de lo recomendado: (texto, color) para la tarjeta 01."""
-        malos = []
+        malos, peor = [], 0
         for clave in ("co2", "pm25", "pm10", "pm1", "temp", "hum", "dentro"):
             desvio = cls.desvio(clave, valores.get(clave))
             if desvio:
                 _, _, unidad, nombre = cls.RANGOS[clave]
                 malos.append("{} {:+g} {}".format(nombre, round(desvio, 1), unidad))
+                peor = max(peor, cls.nivel(clave, valores.get(clave)) or 1)
         if not malos:
-            return ("✓ TODO DENTRO DE LO RECOMENDADO", Tema.VERDE)
-        return ("FUERA DE LO RECOMENDADO: " + " · ".join(malos), Tema.ACENTO)
+            return ("✓ TODO DENTRO DE LO RECOMENDADO", Tema.COLOR_NIVEL[0])
+        return ("FUERA DE LO RECOMENDADO: " + " · ".join(malos), Tema.COLOR_NIVEL[peor])
 
     @classmethod
     def lineas(cls, claves):
@@ -582,7 +647,7 @@ class Aviso(_Compuesto):
             estilo = "vacio"
         marca, color_marca, color_texto = self.ESTILOS[estilo]
         if estilo == "vacio":
-            titulo, resto = "SIN ALERTAS", "El aire está dentro de lo normal."
+            titulo, resto = "SIN ALERTAS", ""
         elif ":" in valor[:8]:
             titulo, resto = valor.split(":", 1)[0].upper(), valor.split(":", 1)[1].strip()
         else:
@@ -674,7 +739,7 @@ class TarjetaLecturas(Panel):
 
     def color_nivel(self, nivel, normal=Tema.TEXTO):
         """Blanco si esta BUENO; el color del nivel si no."""
-        return normal if nivel in (None, 0) else Tema.COLOR_NIVEL[nivel]
+        return normal if nivel is None else Tema.COLOR_NIVEL[nivel]
 
     def barras_puntos(self, x, y_base, valores, ancho, alto, color_ultimo=Tema.ACENTO, paso=7):
         """Columnas de puntos (como un ecualizador) con los ultimos valores."""
@@ -705,21 +770,18 @@ class TarjetaCO2(TarjetaLecturas):
     def __init__(self, padre, numero):
         super().__init__(padre, numero, "CO2", ["co2"])
         self.marca("ppm", Tema.TEXTO_SUAVE)
-        self._nivel = self.etiqueta_pie()
         self._ideal = self.etiqueta_pie(lado="right")
         self.dibujar()
 
     def dibujar(self):
         dato = self.datos["co2"]
         self.lienzo.delete("all")
-        self.numero_grande(-3, -6, self.texto_numero(dato["valor"]), self.color_nivel(dato["nivel"]))
+        nivel = Referencias.nivel("co2", dato["valor"])
+        self.numero_grande(-3, -6, self.texto_numero(dato["valor"]), self.color_nivel(nivel))
         texto, color = Referencias.indicador("co2", dato["valor"])
         self.lienzo.create_text(0, 58, anchor="nw", text=texto, fill=color, font=Tema.fuente(9))
         self.barras_puntos(0, self.ALTO - 6, self.historia["co2"], self.ANCHO, 60,
-                           color_ultimo=self.color_nivel(dato["nivel"], Tema.ACENTO))
-        nivel = dato["nivel"]
-        self._nivel.config(text="" if nivel is None else Tema.NIVELES[nivel],
-                           fg=Tema.TEXTO_SUAVE if nivel is None else Tema.COLOR_NIVEL[nivel])
+                           color_ultimo=self.color_nivel(nivel, Tema.ACENTO))
         self._ideal.config(text=self.texto_ideal(dato["valor"], dato["ideal"]))
 
 
@@ -738,7 +800,8 @@ class TarjetaParticulas(TarjetaLecturas):
     def dibujar(self):
         lienzo = self.lienzo
         lienzo.delete("all")
-        niveles = [self.datos[c]["nivel"] for c, _ in self.FILAS if self.datos[c]["nivel"] is not None]
+        niveles = [Referencias.nivel(c, self.datos[c]["valor"]) for c, _ in self.FILAS]
+        niveles = [n for n in niveles if n is not None]
         peor = max(niveles) if niveles else None
         cx, cy, radio, cantidad = 68, self.ALTO / 2, 62, 44
         encendidos = 0 if peor is None else round(cantidad * (peor + 1) / 4)
@@ -757,20 +820,21 @@ class TarjetaParticulas(TarjetaLecturas):
         for i, (clave, nombre) in enumerate(self.FILAS):
             dato = self.datos[clave]
             y = 22 + i * 44
-            color = Tema.TENUE if dato["nivel"] is None else Tema.COLOR_NIVEL[dato["nivel"]]
+            nivel = Referencias.nivel(clave, dato["valor"])
+            color = Tema.TENUE if nivel is None else Tema.COLOR_NIVEL[nivel]
             lienzo.create_oval(x, y + 3, x + 7, y + 10, fill=color, outline="")
             lienzo.create_text(x + 14, y, anchor="nw", text=nombre, fill=Tema.TEXTO, font=Tema.fuente(10))
             desvio = Referencias.desvio(clave, dato["valor"])
             lienzo.create_text(self.ANCHO - 2, y, anchor="ne", text=self.texto_numero(dato["valor"]),
-                               fill=Tema.ACENTO if desvio else Tema.TEXTO, font=Tema.fuente(13))
+                               fill=Referencias.color(clave, dato["valor"]), font=Tema.fuente(13))
             texto, color_ref = Referencias.indicador(clave, dato["valor"], corto=True)
             if desvio:
                 texto = "{}  MÁX {}".format(texto, Referencias.rango(clave)[2:])
             lienzo.create_text(self.ANCHO - 2, y + 21, anchor="ne", text=texto, fill=color_ref, font=Tema.fuente(8))
             lienzo.create_text(x + 14, y + 19, anchor="nw", fill=color, font=Tema.fuente(9),
-                               text="--" if dato["nivel"] is None else Tema.NIVELES[dato["nivel"]])
+                               text="--" if nivel is None else Tema.NOMBRES[nivel])
         ideales = [self.texto_ideal(self.datos[c]["valor"], self.datos[c]["ideal"]) for c in ("pm25",)]
-        self._pie.config(text=("HUMO " + ideales[0]) if ideales[0] else "POLVO PM10 · HUMO PM2.5 · FINO PM1.0")
+        self._pie.config(text=("HUMO " + ideales[0]) if ideales[0] else "")
 
 
 class TarjetaAlumnos(TarjetaLecturas):
@@ -792,12 +856,16 @@ class TarjetaAlumnos(TarjetaLecturas):
         lienzo = self.lienzo
         lienzo.delete("all")
         dentro = self.datos["dentro"]["valor"]
-        self.numero_grande(-3, -6, self.texto_numero(dentro))
+        nivel = Referencias.nivel("dentro", dentro)
+        self.numero_grande(-3, -6, self.texto_numero(dentro), self.color_nivel(nivel))
         desvio = Referencias.desvio("dentro", dentro)
         if desvio:
-            texto, color = "▲ {:g} SOBRE EL AFORO ({})".format(desvio, self.CAPACIDAD), Tema.ACENTO
+            texto = "{} · ▲ {:g} SOBRE EL AFORO ({})".format(Tema.NOMBRES[nivel], desvio, self.CAPACIDAD)
+        elif nivel is None:
+            texto = "AFORO MÁXIMO {}".format(self.CAPACIDAD)
         else:
-            texto, color = "AFORO MÁXIMO {}".format(self.CAPACIDAD), Tema.TEXTO_SUAVE
+            texto = "{} · AFORO MÁXIMO {}".format(Tema.NOMBRES[nivel], self.CAPACIDAD)
+        color = self.color_nivel(nivel, Tema.TEXTO_SUAVE)
         lienzo.create_text(0, 60, anchor="nw", text=texto, fill=color, font=Tema.fuente(9))
         # Grilla de aforo: 10 x 3 puntos
         x0, y0, paso = 0, 96, 13
@@ -805,9 +873,7 @@ class TarjetaAlumnos(TarjetaLecturas):
             fila, columna = divmod(i, 10)
             x, y = x0 + columna * paso + 5, y0 + fila * paso + 5
             lleno = dentro is not None and i < dentro
-            color = Tema.TEXTO if lleno else Tema.TENUE
-            if lleno and dentro >= self.CAPACIDAD:
-                color = Tema.ACENTO
+            color = self.color_nivel(nivel) if lleno else Tema.TENUE
             r = 3.2 if lleno else 2
             lienzo.create_oval(x - r, y - r, x + r, y + r, fill=color, outline="")
         salidas = self.datos["salidas"]["valor"]
@@ -827,12 +893,19 @@ class TarjetaAmbiente(TarjetaLecturas):
         lienzo.delete("all")
         for x, clave, unidad, nombre in ((0, "temp", "°C", "TEMP"), (138, "hum", "%", "HUMEDAD")):
             lienzo.create_text(x, 0, anchor="nw", text=nombre, fill=Tema.TEXTO_SUAVE, font=Tema.fuente(8))
-            ancho = self.numero_grande(x - 2, 12, self.texto_numero(self.datos[clave]["valor"]), tamano=26)
+            valor = self.datos[clave]["valor"]
+            ancho = self.numero_grande(x - 2, 12, self.texto_numero(valor), Referencias.color(clave, valor),
+                                       tamano=26)
             lienzo.create_text(x + ancho + 4, 50, anchor="sw", text=unidad, fill=Tema.TEXTO_SUAVE,
                                font=Tema.fuente(9))
-            texto, color = Referencias.indicador(clave, self.datos[clave]["valor"], corto=True)
-            if Referencias.desvio(clave, self.datos[clave]["valor"]):
-                texto += " · " + Referencias.rango(clave)
+            desvio = Referencias.desvio(clave, valor)
+            color = Referencias.color(clave, valor, Tema.TEXTO_SUAVE)
+            if desvio is None:
+                texto = "RECOM. " + Referencias.rango(clave)
+            elif desvio:
+                texto = "{} {:+g}".format(Referencias.nombre_nivel(clave, valor), round(desvio, 1))
+            else:
+                texto = "{} · {}".format(Referencias.nombre_nivel(clave, valor), Referencias.rango(clave))
             lienzo.create_text(x, 58, anchor="nw", text=texto, fill=color, font=Tema.fuente(9))
         # Linea de puntos con la temperatura (como un monitor)
         valores = list(self.historia["temp"])[-46:]
@@ -866,6 +939,7 @@ class EstadoAire(tk.Canvas):
         self.poner("--")
 
     def poner(self, texto, color=None):
+        texto = Tema.nombre(texto)          # MODERADO -> NORMAL, MUY MALO -> RIESGOSO
         self.texto = texto
         self.color = color or Tema.color_de(texto)
         self.delete("all")
