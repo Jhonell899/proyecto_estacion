@@ -35,8 +35,6 @@ class SensorAmbiental(Sensor):
         self.pm1 = None
         self.pm25 = None
         self.pm10 = None
-        self.tramas_ok = 0
-        self.tramas_malas = 0
         self.dormido = False
 
         self._buffer = b""
@@ -97,10 +95,8 @@ class SensorAmbiental(Sensor):
             candidata = self._buffer[i:i + self.LARGO_TRAMA]
             if self._trama_valida(candidata):
                 trama_ok = candidata
-                self.tramas_ok += 1
                 self._buffer = self._buffer[i + self.LARGO_TRAMA:]
             else:
-                self.tramas_malas += 1
                 self._buffer = self._buffer[i + 1:]
         return trama_ok
 

@@ -10,15 +10,14 @@ Solo usa la biblioteca estandar de Python (los graficos se dibujan con tkinter).
 """
 import csv
 import math
-import os
 import time
 import tkinter as tk
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from tkinter import ttk
 
-from componentes import BotonIcono, Icono, Panel, Pestanas, Referencias, Tema
+from componentes import BotonIcono, Panel, Pestanas, Referencias, Tema
 
 
 def numero(valor, decimales=1):
@@ -228,12 +227,6 @@ class Estadistica:
         return Estadistica([f for f in self.filas
                             if (fecha is None or f["fecha"] == fecha)
                             and (lugar is None or f["lugar"] == lugar)])
-
-    def fechas(self):
-        return sorted({f["fecha"] for f in self.filas}, reverse=True)
-
-    def lugares(self):
-        return sorted({f["lugar"] for f in self.filas if f["lugar"]})
 
     def serie_tiempo(self, clave):
         filas = sorted(self.filas, key=lambda f: f["momento"])
@@ -505,7 +498,7 @@ class GraficoTiempo(GraficoLinea):
             x0, x1 = x0 - 60, x1 + 60
         valores = [v for _, puntos, _ in self._series for _, v in puntos]
         limites = [r[0] for r in getattr(self, "referencias", [])]
-        self._px, self._py, self._varios = self._ejes(
+        self._px, self._py, _ = self._ejes(
             x0, x1, self.marcas(min([0] + valores), max(valores + limites)), momentos[0], momentos[-1])
         # Lineas de limite: lo recomendado. Lo que queda del lado malo se marca en naranja.
         izq, der = self._izq(), self._der()
